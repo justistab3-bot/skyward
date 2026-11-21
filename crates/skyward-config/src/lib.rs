@@ -719,7 +719,7 @@ mod tests {
         assert_eq!(cfg.device.codename, "luming");
         assert_eq!(cfg.device.model, "Xiaomi Civi 5 Pro");
         assert_eq!((cfg.display.width, cfg.display.height, cfg.display.density), (1236, 2750, 520));
-        assert_eq!(cfg.modules.load, ["synaptics_touch", "aw8697-haptic"]);
+        assert_eq!(cfg.modules.load, ["synaptics_touch", "aw8697-haptic", "nxp-nci"]);
         assert_eq!(
             cfg.touch.writes,
             [Write { path: "/sys/class/touch/touch_dev/enable_touch_raw".into(), value: "0".into() }]
