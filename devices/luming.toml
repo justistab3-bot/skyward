@@ -44,14 +44,6 @@ mounted = ["persist"]
 [logd]
 libraries = ["/mnt/system/system/lib64/libsysutils.so", "/mnt/system/system/lib64/libcap.so"]
 
-# What the phone's init gives the TEE supplicant after firmware is mounted,
-# before the NXP embedded secure element is used by the recovery.
-[[owners]]
-user = "system"
-group = "system"
-mode = 0o660
-paths = ["/dev/tee0", "/dev/teepriv0"]
-
 # What the touch service's own init script on the phone hands to the system
 # user on boot: the touch layer's nodes and the driver's files, which the
 # touch programs open as that user. A recovery runs none of init's boot

@@ -253,7 +253,7 @@ fn nezha_s_other_builds_reach_their_weaver_s_secure_element_through_the_secure_e
 }
 
 #[test]
-fn luming_starts_the_nxp_secure_element_and_tee_before_its_weaver() {
+fn luming_starts_the_nxp_secure_element_before_its_weaver() {
     for build in builds("luming", "vendor") {
         let properties = [
             ("ro.boot.hardware", "qcom"),
@@ -262,20 +262,15 @@ fn luming_starts_the_nxp_secure_element_and_tee_before_its_weaver() {
         ];
         let steps = secure::steps(&phone("luming", &properties)).unwrap();
         let names = names(&steps);
-        let tee = names.iter().position(|name| *name == "tee-supplicant").unwrap();
         let nxp = names.iter().position(|name| *name == "android.hardware.nqnfc-service.nxp").unwrap();
         let serve = names.iter().position(|name| *name == "(the secure element service)").unwrap();
         let weaver = names.iter().position(|name| name.contains("weaver-service.nxp-qti")).unwrap();
 
-        assert!(tee < nxp && nxp < serve && serve < weaver, "{build}: {names:?}");
+        assert!(nxp < serve && serve < weaver, "{build}: {names:?}");
+        assert!(!names.iter().any(|name| *name == "tee-supplicant"), "{build}: {names:?}");
         assert!(!names.iter().any(|name| name.contains("secure_element-service.qti")), "{build}: {names:?}");
 
         let programs = secure::programs(&steps);
-        let tee = programs.iter().find(|started| started.service.path == "/odm/bin/tee-supplicant").unwrap();
-        assert_eq!(tee.service.user.as_deref(), Some("root"));
-        assert_eq!(tee.service.groups, strings(&["system", "secure_element", "nfc", "drmrpc"]));
-        assert_eq!(tee.service.capabilities, strings(&["SYS_RAWIO"]));
-
         let nxp = programs.iter().find(|started| started.service.path == "/odm/bin/hw/android.hardware.nqnfc-service.nxp").unwrap();
         assert_eq!(nxp.service.ready_service.as_deref(), Some("android.hardware.secure_element.ISecureElement/eSE1"));
         assert_eq!(nxp.service.user.as_deref(), Some("nfc"));

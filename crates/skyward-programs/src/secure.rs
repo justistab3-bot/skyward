@@ -39,7 +39,6 @@ const ELEMENT_SERVICE: &str = skyward_omapi::SERVICE;
 /// Luming and other recent Xiaomi devices put the embedded NXP eSE service
 /// in the NXP NFC daemon rather than in Qualcomm's SIM secure-element HAL.
 const NXP_NFC_SERVICE: &str = "android.hardware.nqnfc-service.nxp";
-const TEE_SUPPLICANT: &str = "tee-supplicant";
 
 /// Which of a service the recovery asks: the one every phone has.
 const INSTANCE: &str = "default";
@@ -289,7 +288,8 @@ fn weaver(phone: &Phone) -> Result<Vec<Step>> {
 /// it.
 fn element(phone: &Phone, name: &str) -> Result<Vec<Started>> {
     let told = described(phone, Kind::Aidl, name).expect("the service was found among those described");
-    let nxp = name.starts_with(EMBEDDED)
+    // `name` is the full AIDL service name; the embedded marker is in its instance (`eSE1`).
+    let nxp = told.described.instance.starts_with(EMBEDDED)
         && phone.services.iter().any(|service| {
             service.file == told.file
                 && service.described.kind == Kind::Aidl
@@ -311,27 +311,7 @@ fn element(phone: &Phone, name: &str) -> Result<Vec<Started>> {
         }
     };
     let registers = besides(phone, program, &own, |_| false);
-    let mut out = Vec::new();
-    if nxp {
-        let tee = phone
-            .programs
-            .iter()
-            .find(|program| {
-                program.name == TEE_SUPPLICANT
-                    && phone.carries(program)
-                    && phone.actions.iter().any(|action| {
-                        action.commands.iter().any(|command| {
-                            command.len() == 2
-                                && ["start", "enable"].contains(&command[0].as_str())
-                                && command[1] == TEE_SUPPLICANT
-                        })
-                    })
-            })
-            .context("the phone describes an NXP NFC secure element but its init scripts do not start tee-supplicant")?;
-        out.push(started(phone, tee, Ready::Nothing, Vec::new()));
-    }
-    out.push(started(phone, program, Ready::Service(own), registers));
-    Ok(out)
+    Ok(vec![started(phone, program, Ready::Service(own), registers)])
 }
 
 /// The description of the service `name` of `kind`, where the phone
