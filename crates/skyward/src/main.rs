@@ -623,11 +623,16 @@ fn hand_over(owners: &[skyward_config::Owners]) -> Result<usize> {
     use std::os::unix::fs::PermissionsExt;
     let known = ueventd::accounts(&ueventd::PASSWD_FILES.iter().chain(&ueventd::GROUP_FILES).copied().collect::<Vec<_>>());
     let id = |name: &str| ueventd::account(&known, name).with_context(|| format!("the phone has no account named {name}"));
+    let until = std::time::Instant::now() + FILES_MADE;
     let mut handed = 0;
     for run in owners {
         let (uid, gid) = (id(&run.user)?, id(&run.group)?);
         for path in &run.paths {
-            skyward_sys::wait_file(Path::new(path), FILES_MADE).context("wait for a file the modules just loaded make")?;
+            let remaining = until.saturating_duration_since(std::time::Instant::now());
+            if let Err(e) = skyward_sys::wait_file(Path::new(path), remaining) {
+                skyward_sys::kmsg(&format!("{path} not handed over: {e}"))?;
+                continue;
+            }
             std::os::unix::fs::chown(path, Some(uid), Some(gid)).with_context(|| format!("give {path} to {}:{}", run.user, run.group))?;
             std::fs::set_permissions(path, std::fs::Permissions::from_mode(run.mode))
                 .with_context(|| format!("give {path} the mode {:o}", run.mode))?;
