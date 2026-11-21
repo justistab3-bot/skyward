@@ -126,8 +126,9 @@ groups = ["root", "system", "wakelock", "graphics"]
 # qca_cld3_wcn7750 over the icnss2 platform driver, which the phone's own
 # init.qti.wlan.rc boots by writing wpss_boot once the WLAN subsystem is
 # named. Until then icnss2 keeps the chip off and wlan0 does not appear.
-# The driver reads its settings through the firmware loader from the
-# vendor partition's own wifi folder, which a recovery leaves where it is.
+# The chipset firmware itself is exposed under /vendor/firmware by the
+# phone's modem partition. Its calibration/config file is in vendor's
+# /etc/wifi folder, so make that file available to the firmware loader.
 # Whether a network joined reaches the internet is asked of the page the
 # stock system's NetworkStack overlay names, on the product partition.
 [wlan]
@@ -135,6 +136,9 @@ modules = ["rfkill", "qca_cld3_wcn7750"]
 writes = [
     { path = "/sys/kernel/icnss/wlan_en_delay", value = "1000" },
     { path = "/sys/kernel/icnss/wpss_boot", value = "1" },
+]
+firmware = [
+    { name = "wlan/qca_cld/wcn7750/WCNSS_qcom_cfg.ini", path = "/vendor/etc/wifi/wcn7750/WCNSS_qcom_cfg.ini" },
 ]
 interface = "wlan0"
 supplicant = "/vendor/bin/hw/wpa_supplicant"
