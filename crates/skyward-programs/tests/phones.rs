@@ -253,7 +253,7 @@ fn nezha_s_other_builds_reach_their_weaver_s_secure_element_through_the_secure_e
 }
 
 #[test]
-fn luming_starts_the_nxp_secure_element_before_its_weaver() {
+fn luming_starts_its_secure_element_before_its_weaver() {
     for build in builds("luming", "vendor") {
         let properties = [
             ("ro.boot.hardware", "qcom"),
@@ -262,19 +262,22 @@ fn luming_starts_the_nxp_secure_element_before_its_weaver() {
         ];
         let steps = secure::steps(&phone("luming", &properties)).unwrap();
         let names = names(&steps);
-        let nxp = names.iter().position(|name| *name == "android.hardware.nqnfc-service.nxp").unwrap();
+        let element = names.iter().position(|name| *name == "android.hardware.secure_element-service.qti").unwrap();
         let serve = names.iter().position(|name| *name == "(the secure element service)").unwrap();
         let weaver = names.iter().position(|name| name.contains("weaver-service.nxp-qti")).unwrap();
 
-        assert!(nxp < serve && serve < weaver, "{build}: {names:?}");
-        assert!(!names.iter().any(|name| *name == "tee-supplicant"), "{build}: {names:?}");
-        assert!(!names.iter().any(|name| name.contains("secure_element-service.qti")), "{build}: {names:?}");
+        assert!(element < serve && serve < weaver, "{build}: {names:?}");
+        assert!(!names.contains(&"tee-supplicant"), "{build}: {names:?}");
+        // The NXP NFC daemon declares the embedded element in its own
+        // description but registers only the chip's own services: the
+        // element's is the one Qualcomm's secure element service serves.
+        assert!(!names.contains(&"android.hardware.nqnfc-service.nxp"), "{build}: {names:?}");
 
         let programs = secure::programs(&steps);
-        let nxp = programs.iter().find(|started| started.service.path == "/odm/bin/hw/android.hardware.nqnfc-service.nxp").unwrap();
-        assert_eq!(nxp.service.ready_service.as_deref(), Some("android.hardware.secure_element.ISecureElement/eSE1"));
-        assert_eq!(nxp.service.user.as_deref(), Some("nfc"));
-        assert_eq!(nxp.service.groups, strings(&["nfc", "oem_2912"]));
+        let element = programs.iter().find(|started| started.service.path == "/vendor/bin/hw/android.hardware.secure_element-service.qti").unwrap();
+        assert_eq!(element.service.ready_service.as_deref(), Some("android.hardware.secure_element.ISecureElement/eSE1"));
+        assert_eq!(element.service.user.as_deref(), Some("system"));
+        assert_eq!(element.service.groups, strings(&["nfc", "system"]));
     }
 }
 

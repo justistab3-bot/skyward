@@ -21,13 +21,14 @@ sources = ["vendor_boot", "vendor_dlkm", "vendor", "system_dlkm"]
 # first from vendor_dlkm. The AW8697 force-feedback motor is also a module;
 # recovery has no stock init to load it before the UI opens the input device.
 #
-# The secure element is reached through the phone's NFC program, which opens
-# the eSE by /dev/nq-nci, the node NXP's nxp-nci driver makes. That driver is
-# a module of vendor_dlkm as well, and first-stage init loads none of it: with
-# it out, the node is not there, the NFC program says the node is not yet
-# available and ends without registering the secure element, and the weaver
-# that reads the user's secret out of that element never registers either, so
-# the data partition stays closed.
+# The secure element is the NXP SN220T built into the NFC chip. Qualcomm's
+# secure element service powers it through the node NXP's nxp-nci driver
+# makes, /dev/nq-nci, and reaches it through the secure world's gpqese
+# application, which the phone's modem partition carries. That driver is a
+# module of vendor_dlkm and first-stage init loads none of it: with it out,
+# the service cannot power the chip, registers no eSE1, and the weaver that
+# reads the user's secret out of that element never registers either, so the
+# data partition stays closed.
 load = ["synaptics_touch", "aw8697-haptic", "nxp-nci"]
 
 [touch]
@@ -114,10 +115,11 @@ paths = [
     "/sys/class/touch/touch_dev/hold_sensor",
 ]
 
-# The NFC program runs as the nfc user, in the nfc and oem_2912 groups, and
-# opens /dev/nq-nci, which the driver makes as root alone. The phone's own
-# init hands that node over through ueventd's rules, which live in the
-# installed system that a recovery never reads, so it is handed over here.
+# The secure element's service runs as the system user, in the nfc and
+# system groups, and opens /dev/nq-nci, which the driver makes as root alone.
+# The phone's own init hands that node over through ueventd's rules, which
+# live in the installed system that a recovery never reads, so it is handed
+# over here.
 [[owners]]
 user = "nfc"
 group = "nfc"
