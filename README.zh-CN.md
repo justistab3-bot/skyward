@@ -95,6 +95,7 @@ Skyward 是使用 Rust 编写的 recovery，从零开始编写。
 
 | 机型 | 代号 | 构建所用的系统版本 |
 | --- | --- | --- |
+| 🚧 小米 Civi 5 Pro | `luming` | OS4.0.2.0.XOICNXM（Android 17） |
 | 🚧 小米 13 | `fuxi` | OS3.0.309.0.WMCCNXM（Android 16） |
 | 🚧 小米 13 Pro | `nuwa` | OS3.0.312.0.WMBCNXM（Android 16） |
 | 🚧 小米 14 | `houji` | OS3.0.307.0.WNCCNXM（Android 16） |

@@ -107,6 +107,7 @@ not been verified.
 
 | Device | Codename | Built on |
 | --- | --- | --- |
+| 🚧 Xiaomi Civi 5 Pro | `luming` | OS4.0.2.0.XOICNXM (Android 17) |
 | 🚧 Xiaomi 13 | `fuxi` | OS3.0.309.0.WMCCNXM (Android 16) |
 | 🚧 Xiaomi 13 Pro | `nuwa` | OS3.0.312.0.WMBCNXM (Android 16) |
 | 🚧 Xiaomi 14 | `houji` | OS3.0.307.0.WNCCNXM (Android 16) |

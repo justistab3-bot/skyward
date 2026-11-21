@@ -1,0 +1,194 @@
+[device]
+codename = "luming"
+brand = "Xiaomi"
+model = "Xiaomi Civi 5 Pro"
+ab = true
+soc = { hans = "第四代骁龙®8s移动平台", hant = "Snapdragon® 8s Gen 4 行動平台", en = "Snapdragon® 8s Gen 4 Mobile Platform" }
+os_version_prop = "ro.mi.os.version.incremental"
+
+[display]
+# ro.sf.lcd_density in the product partition's build.prop, and the panel's
+# own mode, 1236x2750x120cmd, as the kernel reports it.
+width = 1236
+height = 2750
+density = 520
+diagonal = 6.55
+
+[modules]
+sources = ["vendor_boot", "vendor_dlkm", "vendor", "system_dlkm"]
+# The touchscreen: Synaptics TCM over SPI, behind Xiaomi's touch layer.
+# synaptics_touch.ko depends on xiaomi_touch.ko and the module graph loads it
+# first from vendor_dlkm. The AW8697 force-feedback motor is also a module;
+# recovery has no stock init to load it before the UI opens the input device.
+load = ["synaptics_touch", "aw8697-haptic"]
+
+[touch]
+writes = [{ path = "/sys/class/touch/touch_dev/enable_touch_raw", value = "0" }]
+
+# The firmware of the WLAN chip, and the apps the secure world loads for the
+# secure element's service, are on the modem partition, which the phone
+# mounts at /vendor/firmware_mnt and its own recovery leaves unmounted.
+[firmware]
+partition = "modem"
+
+# The persist partition, which the phone mounts at /mnt/vendor/persist and
+# its own recovery leaves unmounted. The secure world keeps its own files
+# there, through a listener qseecomd registers, and the WLAN's MAC address
+# is there as well.
+[partitions]
+mounted = ["persist"]
+
+# The recovery's own logd loads libsysutils and libcap, which the stock
+# recovery leaves out, so it ends as soon as init starts it. The installed
+# system carries both, built from the same sources.
+[logd]
+libraries = ["/mnt/system/system/lib64/libsysutils.so", "/mnt/system/system/lib64/libcap.so"]
+
+# What the touch service's own init script on the phone hands to the system
+# user on boot: the touch layer's nodes and the driver's files, which the
+# touch programs open as that user. A recovery runs none of init's boot
+# actions, so they are made as the touch module loads.
+[[owners]]
+user = "system"
+group = "system"
+mode = 0o664
+paths = [
+    "/dev/xiaomi-touch",
+    "/dev/xiaomi-touch-knock",
+    "/dev/xiaomi-thp",
+    "/sys/class/touch/tp_dev/fod_status",
+    "/sys/class/touch/touch_dev/gesture_single_tap_state",
+    "/sys/class/touch/touch_dev/fod_press_status",
+    "/sys/class/touch/touch_dev/prox_sensor",
+    "/sys/class/touch/touch_dev/prox_sensor_data",
+    "/proc/tp_selftest",
+    "/proc/tp_selftest_1",
+    "/proc/tp_fw_version",
+    "/proc/tp_lockdown_info",
+    "/sys/class/touch/touch_dev/clicktouch_raw",
+    "/sys/class/touch/touch_dev/update_rawdata",
+    "/sys/class/touch/touch_dev/enable_touch_raw",
+    "/sys/class/touch/touch_dev/enable_touch_delta",
+    "/sys/class/touch/touch_dev/resolution_factor",
+    "/sys/class/touch/touch_dev/touch_thp_dump",
+    "/sys/class/touch/touch_dev/touch_thp_cmd",
+    "/sys/class/touch/touch_dev/touch_thp_cmd_data",
+    "/sys/class/touch/touch_dev/touch_thp_cmd_ready",
+    "/sys/class/touch/touch_dev/touch_thp_ic_cmd",
+    "/sys/class/touch/touch_dev/touch_thp_ic_cmd_data",
+    "/sys/class/touch/touch_dev/touch_thp_rx_num",
+    "/sys/class/touch/touch_dev/touch_thp_tx_num",
+    "/sys/class/touch/touch_dev/touch_thp_x_resolution",
+    "/sys/class/touch/touch_dev/touch_thp_y_resolution",
+    "/sys/class/touch/touch_dev/touch_thp_smooth",
+    "/sys/class/touch/touch_dev/touch_thp_noisefilter",
+    "/sys/class/touch/touch_dev/touch_thp_downthd",
+    "/sys/class/touch/touch_dev/touch_thp_upthd",
+    "/sys/class/touch/touch_dev/touch_thp_movethd",
+    "/sys/class/touch/touch_dev/touch_thp_islandthd",
+    "/sys/class/touch/touch_dev/touch_thp_preset_point",
+    "/sys/class/touch/touch_dev/touch_thp_testmode",
+    "/sys/class/touch/touch_dev/touch_thp_testresult",
+    "/sys/class/touch/touch_dev/touch_thp_mem_notify",
+    "/sys/class/touch/touch_dev/touch_active_status",
+    "/sys/class/touch/touch_dev/touch_finger_status",
+    "/sys/class/touch/touch_dev/touch_irq_no",
+    "/sys/class/touch/touch_dev/touch_sensor",
+    "/sys/class/touch/touch_dev/touch_sensor_ctrl",
+    "/sys/class/touch/touch_dev/touch_doze_analysis",
+    "/sys/class/touch/touch_dev/touch_dfs_test",
+    "/sys/class/touch/touch_dev/touch_ic_buffer",
+    "/sys/class/touch/touch_dev/abnormal_event",
+    "/sys/class/touch/touch_dev/fod_attn_test",
+    "/sys/class/touch/touch_dev/suspend_state",
+    "/sys/class/touch/touch_dev/palm_sensor",
+    "/sys/class/touch/touch_dev/palm_sensor_data",
+    "/sys/class/touch/touch_dev/hold_sensor",
+]
+
+# What the phone's own init runs once the system has finished starting, as
+# kernel-post-boot in /vendor/etc/init/hw/init.qti.kernel.rc. The kernel
+# starts both CPU clusters on the performance governor, which holds them at
+# their highest clock, and Qualcomm's idle driver keeps idle CPUs from
+# powering down until it is told otherwise; the script hands the clusters
+# to WALT, lets idle CPUs power down and sets how the memory bus scales.
+# Without it the CPUs stay at their highest clock and voltage even while
+# idle, and the phone slowly heats up.
+[[service]]
+path = "/vendor/bin/sh"
+args = ["/vendor/bin/init.kernel.post_boot.sh"]
+libraries = ["/system/lib64", "/vendor/lib64"]
+oneshot = true
+user = "root"
+groups = ["root", "system", "wakelock", "graphics"]
+
+# WLAN: Qualcomm's WCN7750, integrated in the SoC and driven by
+# qca_cld3_wcn7750 over the icnss2 platform driver, which the phone's own
+# init.qti.wlan.rc boots by writing wpss_boot once the WLAN subsystem is
+# named. Until then icnss2 keeps the chip off and wlan0 does not appear.
+# The driver reads its settings through the firmware loader from the
+# vendor partition's own wifi folder, which a recovery leaves where it is.
+# Whether a network joined reaches the internet is asked of the page the
+# stock system's NetworkStack overlay names, on the product partition.
+[wlan]
+modules = ["rfkill", "qca_cld3_wcn7750"]
+writes = [
+    { path = "/sys/kernel/icnss/wlan_en_delay", value = "1000" },
+    { path = "/sys/kernel/icnss/wpss_boot", value = "1" },
+]
+interface = "wlan0"
+supplicant = "/vendor/bin/hw/wpa_supplicant"
+libraries = ["/system/lib64", "/vendor/lib64"]
+service = "android.hardware.wifi.supplicant.ISupplicant/default"
+probe = "http://connect.rom.miui.com/generate_204"
+
+# The update server the stock updater of the Chinese system asks.
+[update]
+server = "https://update.miui.com/updates/miotaV3.php"
+
+# The stock build the recovery is made on: the Chinese system's OS4.0.2.0,
+# whose full update package on the phone maker's own download server holds
+# the recovery partition the recovery is built on top of.
+[stock]
+version = "OS4.0.2.0.XOICNXM"
+package = "https://bkt-sgp-miui-ota-update-alisgp.oss-ap-southeast-1.aliyuncs.com/OS4.0.2.0.XOICNXM/luming-ota_full-OS4.0.2.0.XOICNXM-user-17.0-4e29a3f08f.zip"
+recovery = "df4e61b925e56ea88ad596823ef111c918823f6698b013f4b6683d7a7a31e752"
+
+# The phone's Awinic AW8697 force-feedback motor. Its driver reports the
+# measured resonant frequency in tenths of a hertz through f0_value. The
+# strengths are conservative until a recovery build can drive this device.
+[haptics]
+resonance = "/sys/bus/i2c/drivers/awinic_haptic/10-005a/f0_value"
+strength = { lightest = 0.25, strongest = 0.75 }
+
+# The partitions a backup of the baseband and EFS takes: the baseband's
+# settings, with the IMEI, and the sensors' calibration. And what of the
+# data partition a backup leaves out because the secure world keeps it in
+# step with itself: its own storage, its apps' data, that of Xiaomi's own
+# trusted environment, the secure element's state and the fingerprint
+# templates.
+[backup]
+efs = ["modemst1", "modemst2", "fsg", "fsc", "persist"]
+data_skipped = [
+    "vendor/tzstorage",
+    "vendor/qtee",
+    "vendor/mitee",
+    "vendor/goodix",
+    "vendor/fingerprint",
+    "vendor/fpdata",
+    "vendor/misc/mi_fp",
+]
+
+# Where the phone's own programs keep logs in the data partition.
+[wipe]
+logs = [
+    "/data/miuilog",
+    "/data/vendor/diag",
+    "/data/vendor/bsplog",
+    "/data/vendor/log",
+    "/data/vendor/ramdump",
+    "/data/vendor/ramdump_ssr",
+    "/data/vendor/ssrdump",
+    "/data/vendor/tombstones",
+    "/data/vendor/wlan_logs",
+]

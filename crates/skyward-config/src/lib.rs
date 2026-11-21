@@ -201,6 +201,17 @@ pub struct Wipe {
 /// The data partition, which the folders erasing takes in are in.
 const DATA: &str = "/data";
 
+/// Validate paths in the Android filesystem, independent of the host OS.
+fn plain_path(path: &str, absolute: bool) -> bool {
+    let path = if absolute {
+        let Some(path) = path.strip_prefix('/') else { return false };
+        path
+    } else {
+        path
+    };
+    !path.is_empty() && path.split('/').all(|part| !part.is_empty() && part != "." && part != "..")
+}
+
 /// The vibration motor, played through the kernel's force-feedback events:
 /// its click, a waveform its driver keeps or one made from samples at the
 /// motor's resonant frequency, which the driver plays as they are given,
@@ -499,10 +510,8 @@ impl DeviceConfig {
     pub fn parse(text: &str) -> Result<Self> {
         let cfg: DeviceConfig = toml::from_str(text).context("parse device config")?;
         for log in &cfg.wipe.logs {
-            let path = Path::new(log);
-            let plain = path.components().all(|c| matches!(c, std::path::Component::RootDir | std::path::Component::Normal(_)));
             ensure!(
-                path.is_absolute() && plain && path.starts_with(DATA) && path != Path::new(DATA),
+                plain_path(log, true) && log.starts_with("/data/") && log != DATA,
                 "[wipe] logs: {log} is not a folder inside {DATA}"
             );
         }
@@ -534,13 +543,11 @@ impl DeviceConfig {
             }
         }
         for folder in &cfg.backup.data_skipped {
-            let path = Path::new(folder);
-            let plain = path.components().all(|c| matches!(c, std::path::Component::Normal(_)));
-            ensure!(plain && !folder.is_empty(), "[backup] data_skipped: {folder} is not a path from the top of {DATA}");
+            ensure!(plain_path(folder, false), "[backup] data_skipped: {folder} is not a path from the top of {DATA}");
         }
         if let Some(haptics) = &cfg.haptics {
             let file = &haptics.resonance;
-            ensure!(Path::new(file).is_absolute(), "[haptics] resonance: {file} is not an absolute path");
+            ensure!(plain_path(file, true), "[haptics] resonance: {file} is not an absolute path");
             let Strength { lightest, strongest } = haptics.strength;
             ensure!(
                 0.0 < lightest && lightest < strongest && strongest <= 1.0,
@@ -549,9 +556,7 @@ impl DeviceConfig {
         }
         if let Some(logd) = &cfg.logd {
             for library in &logd.libraries {
-                let path = Path::new(library);
-                let plain = path.components().all(|c| matches!(c, std::path::Component::RootDir | std::path::Component::Normal(_)));
-                ensure!(path.is_absolute() && plain && path.file_name().is_some(), "[logd] libraries: {library} is not an absolute path to a file");
+                ensure!(plain_path(library, true), "[logd] libraries: {library} is not an absolute path to a file");
             }
         }
         for owners in &cfg.owners {
@@ -561,9 +566,7 @@ impl DeviceConfig {
             ensure!(owners.mode <= 0o7777, "[[owners]] mode {:o} is not a file's mode", owners.mode);
             ensure!(!owners.paths.is_empty(), "[[owners]] for {}:{} names no file", owners.user, owners.group);
             for file in &owners.paths {
-                let path = Path::new(file);
-                let plain = path.components().all(|c| matches!(c, std::path::Component::RootDir | std::path::Component::Normal(_)));
-                ensure!(path.is_absolute() && plain && path.file_name().is_some(), "[[owners]] paths: {file} is not an absolute path to a file");
+                ensure!(plain_path(file, true), "[[owners]] paths: {file} is not an absolute path to a file");
             }
         }
         if let Some(stock) = &cfg.stock {
@@ -583,20 +586,16 @@ impl DeviceConfig {
         if let Some(wlan) = &cfg.wlan {
             ensure!(wlan.probe.starts_with("http://"), "[wlan] probe: {} is not a plain HTTP address", wlan.probe);
             for file in &wlan.firmware {
-                let name = Path::new(&file.name);
-                let plain = name.components().all(|c| matches!(c, std::path::Component::Normal(_)));
-                ensure!(plain && !file.name.is_empty(), "[wlan] firmware: {} is not a name from the top of the loader's folders", file.name);
-                let path = Path::new(&file.path);
+                ensure!(plain_path(&file.name, false), "[wlan] firmware: {} is not a name from the top of the loader's folders", file.name);
                 match &file.partition {
                     Some(partition) => {
-                        let plain = path.components().all(|c| matches!(c, std::path::Component::Normal(_)));
                         ensure!(
                             !partition.is_empty() && !partition.contains('/'),
                             "[wlan] firmware: {partition} is not a partition's name"
                         );
-                        ensure!(plain && !file.path.is_empty(), "[wlan] firmware: {} is not a path from the top of {partition}", file.path);
+                        ensure!(plain_path(&file.path, false), "[wlan] firmware: {} is not a path from the top of {partition}", file.path);
                     }
-                    None => ensure!(path.is_absolute(), "[wlan] firmware: {} is not an absolute path", file.path),
+                    None => ensure!(plain_path(&file.path, true), "[wlan] firmware: {} is not an absolute path", file.path),
                 }
             }
         }
@@ -715,6 +714,33 @@ mod tests {
     }
 
     #[test]
+    fn parses_luming() {
+        let cfg = DeviceConfig::parse(include_str!("../../../devices/luming.toml")).unwrap();
+        assert_eq!(cfg.device.codename, "luming");
+        assert_eq!(cfg.device.model, "Xiaomi Civi 5 Pro");
+        assert_eq!((cfg.display.width, cfg.display.height, cfg.display.density), (1236, 2750, 520));
+        assert_eq!(cfg.modules.load, ["synaptics_touch", "aw8697-haptic"]);
+        assert_eq!(
+            cfg.touch.writes,
+            [Write { path: "/sys/class/touch/touch_dev/enable_touch_raw".into(), value: "0".into() }]
+        );
+        let wlan = cfg.wlan.as_ref().expect("the OTA names the WLAN module and its start sequence");
+        assert_eq!(wlan.modules, ["rfkill", "qca_cld3_wcn7750"]);
+        assert_eq!(
+            wlan.writes,
+            [
+                Write { path: "/sys/kernel/icnss/wlan_en_delay".into(), value: "1000".into() },
+                Write { path: "/sys/kernel/icnss/wpss_boot".into(), value: "1".into() },
+            ]
+        );
+        let stock = cfg.stock.as_ref().expect("the local OTA supplies recovery");
+        assert_eq!(stock.version, "OS4.0.2.0.XOICNXM");
+        assert_eq!(stock.recovery, "df4e61b925e56ea88ad596823ef111c918823f6698b013f4b6683d7a7a31e752");
+        let haptics = cfg.haptics.as_ref().expect("the live device exposes an AW8697 motor");
+        assert_eq!(haptics.resonance, "/sys/bus/i2c/drivers/awinic_haptic/10-005a/f0_value");
+    }
+
+    #[test]
     fn a_program_runs_only_where_the_property_has_its_value() {
         let base = "[device]\ncodename = \"x\"\n[[service]]\npath = \"/odm/bin/a\"\n";
         let only = DeviceConfig::parse(&format!("{base}when = {{ property = \"ro.sku\", value = \"p\" }}\n")).unwrap();
@@ -796,6 +822,7 @@ mod tests {
             (include_str!("../../../devices/miro.toml"), "OS3.0.305.0.WOMCNXM"),
             (include_str!("../../../devices/annibale.toml"), "OS3.0.307.0.WPKCNXM"),
             (include_str!("../../../devices/warsaw.toml"), "OS3.0.309.0.WHPCNXM"),
+            (include_str!("../../../devices/luming.toml"), "OS4.0.2.0.XOICNXM"),
         ] {
             let stock = DeviceConfig::parse(text).unwrap().stock.expect("a stock build to build on");
             assert_eq!(stock.version, version);
