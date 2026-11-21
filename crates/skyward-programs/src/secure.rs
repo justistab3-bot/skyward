@@ -30,10 +30,16 @@ const WEAVER: &str = "android.hardware.weaver.IWeaver/default";
 /// the SIM cards'.
 const ELEMENT: (&str, &str) = ("android.hardware.secure_element", "ISecureElement");
 const EMBEDDED: &str = "eSE";
+const NXP_NFC: (&str, &str) = ("vendor.nxp.nxpnfc_aidl", "INxpNfc");
 
 /// Android's secure element service, which in the system an app serves and
 /// in a recovery the recovery does.
 const ELEMENT_SERVICE: &str = skyward_omapi::SERVICE;
+
+/// Luming and other recent Xiaomi devices put the embedded NXP eSE service
+/// in the NXP NFC daemon rather than in Qualcomm's SIM secure-element HAL.
+const NXP_NFC_SERVICE: &str = "android.hardware.nqnfc-service.nxp";
+const TEE_SUPPLICANT: &str = "tee-supplicant";
 
 /// Which of a service the recovery asks: the one every phone has.
 const INSTANCE: &str = "default";
@@ -247,7 +253,9 @@ fn weaver(phone: &Phone) -> Result<Vec<Step>> {
                 .iter()
                 .find(|s| s.described.kind == Kind::Aidl && format!("{}.{}", s.described.package, s.described.interface) == *interface)
                 .with_context(|| format!("{} goes through {interface}, which the phone does not describe", program.path))?;
-            out.push(Step::Start(Box::new(element(phone, &own.described.name())?)));
+            for started in element(phone, &own.described.name())? {
+                out.push(Step::Start(Box::new(started)));
+            }
         }
         Through::ElementService => {
             ensure!(described(phone, Kind::Aidl, ELEMENT_SERVICE).is_some(), "{} goes through {ELEMENT_SERVICE}, which the phone does not describe", program.path);
@@ -260,9 +268,10 @@ fn weaver(phone: &Phone) -> Result<Vec<Step>> {
                 .collect();
             ensure!(!embedded.is_empty(), "{} goes through a secure element built into the phone, and the phone describes the service of none", program.path);
             for name in embedded {
-                let started = element(phone, &name)?;
-                if !out.iter().any(|step| matches!(step, Step::Start(s) if s.service.path == started.service.path)) {
-                    out.push(Step::Start(Box::new(started)));
+                for started in element(phone, &name)? {
+                    if !out.iter().any(|step| matches!(step, Step::Start(s) if s.service.path == started.service.path)) {
+                        out.push(Step::Start(Box::new(started)));
+                    }
                 }
             }
             out.push(Step::ServeElements);
@@ -278,9 +287,21 @@ fn weaver(phone: &Phone) -> Result<Vec<Step>> {
 /// `name`: it is ready with the secure element's own service, which is
 /// `name` itself or the one the program's own description tells of beside
 /// it.
-fn element(phone: &Phone, name: &str) -> Result<Started> {
-    let program = behind(phone, "a secure element's service", name, |file| file.contains("secure_element"))?;
+fn element(phone: &Phone, name: &str) -> Result<Vec<Started>> {
     let told = described(phone, Kind::Aidl, name).expect("the service was found among those described");
+    let nxp = name.starts_with(EMBEDDED)
+        && phone.services.iter().any(|service| {
+            service.file == told.file
+                && service.described.kind == Kind::Aidl
+                && (service.described.package.as_str(), service.described.interface.as_str()) == NXP_NFC
+        });
+    let program = if nxp {
+        let candidates = phone.programs.iter().filter(|program| file_name(program) == NXP_NFC_SERVICE).collect();
+        one(phone, "the NXP NFC service for the embedded secure element", candidates)?
+            .context("the phone describes an NXP NFC secure element but its init scripts do not start the NXP NFC service")?
+    } else {
+        behind(phone, "a secure element's service", name, |file| file.contains("secure_element"))?
+    };
     let of_an_element = |d: &Described| (d.package.as_str(), d.interface.as_str()) == ELEMENT;
     let own = match of_an_element(&told.described) {
         true => name.to_string(),
@@ -290,7 +311,27 @@ fn element(phone: &Phone, name: &str) -> Result<Started> {
         }
     };
     let registers = besides(phone, program, &own, |_| false);
-    Ok(started(phone, program, Ready::Service(own), registers))
+    let mut out = Vec::new();
+    if nxp {
+        let tee = phone
+            .programs
+            .iter()
+            .find(|program| {
+                program.name == TEE_SUPPLICANT
+                    && phone.carries(program)
+                    && phone.actions.iter().any(|action| {
+                        action.commands.iter().any(|command| {
+                            command.len() == 2
+                                && ["start", "enable"].contains(&command[0].as_str())
+                                && command[1] == TEE_SUPPLICANT
+                        })
+                    })
+            })
+            .context("the phone describes an NXP NFC secure element but its init scripts do not start tee-supplicant")?;
+        out.push(started(phone, tee, Ready::Nothing, Vec::new()));
+    }
+    out.push(started(phone, program, Ready::Service(own), registers));
+    Ok(out)
 }
 
 /// The description of the service `name` of `kind`, where the phone
