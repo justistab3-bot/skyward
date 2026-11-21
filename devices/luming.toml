@@ -20,7 +20,15 @@ sources = ["vendor_boot", "vendor_dlkm", "vendor", "system_dlkm"]
 # synaptics_touch.ko depends on xiaomi_touch.ko and the module graph loads it
 # first from vendor_dlkm. The AW8697 force-feedback motor is also a module;
 # recovery has no stock init to load it before the UI opens the input device.
-load = ["synaptics_touch", "aw8697-haptic"]
+#
+# The secure element is reached through the phone's NFC program, which opens
+# the eSE by /dev/nq-nci, the node NXP's nxp-nci driver makes. That driver is
+# a module of vendor_dlkm as well, and first-stage init loads none of it: with
+# it out, the node is not there, the NFC program says the node is not yet
+# available and ends without registering the secure element, and the weaver
+# that reads the user's secret out of that element never registers either, so
+# the data partition stays closed.
+load = ["synaptics_touch", "aw8697-haptic", "nxp-nci"]
 
 [touch]
 writes = [{ path = "/sys/class/touch/touch_dev/enable_touch_raw", value = "0" }]
@@ -105,6 +113,16 @@ paths = [
     "/sys/class/touch/touch_dev/palm_sensor_data",
     "/sys/class/touch/touch_dev/hold_sensor",
 ]
+
+# The NFC program runs as the nfc user, in the nfc and oem_2912 groups, and
+# opens /dev/nq-nci, which the driver makes as root alone. The phone's own
+# init hands that node over through ueventd's rules, which live in the
+# installed system that a recovery never reads, so it is handed over here.
+[[owners]]
+user = "nfc"
+group = "nfc"
+mode = 0o660
+paths = ["/dev/nq-nci"]
 
 # What the phone's own init runs once the system has finished starting, as
 # kernel-post-boot in /vendor/etc/init/hw/init.qti.kernel.rc. The kernel
